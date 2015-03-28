@@ -1,85 +1,100 @@
 package main
 
-import "time"
-
-type FloodArgs struct {
-    Clients int
-    Requests int
-    Client_name string
-    Client_args interface{}
-}
-
-type FloodReply struct {
-    Success int
-    Fail int
-    Min_time time.Duration
-    Max_time time.Duration
-    Avg_time time.Duration
-    Total_time time.Duration
-}
-
-type Msg struct {
-    Code int
-    Time time.Duration
-}
+import "sync"
+import "net/rpc"
+import "container/list"
 
 type Flood struct {
-    client_func map[string]interface{}
+    client_conns map[string]*io.ReadWriteCloser
+    server_conns map[string]*io.ReadWriteCloser
+
+    peers *list.List
+    peers_lck *sync.Mutex
+
+    rpc_server *rpc.Server
 }
 
 func NewFlood() *Flood {
     f := &Flood{
-        client_func: make(map[string]interface{}),
+        client_conns: make(map[string]*io.ReadWriteCloser),
+        server_conns: make(map[string]*io.ReadWriteCloser),
+        peers: list.New(),
+        peers_lck: &sync.Mutex{},
+        rcp_server: rpc.NewServer(),
     }
-    f.client_func["http"] = HttpClient
     return f
 }
 
-func (f *Flood) Run(args *FloodArgs, reply *FloodReply) error {
-    v := f.client_func[args.Client_name]
-    client_func := v.(func(int, chan *Msg, *FloodArgs))
-
-    total_requests := args.Clients * args.Requests
-    out := make(chan *Msg, total_requests)
-
-    ts := time.Now()
-    for i := 0; i < args.Clients; i++ {
-        go client_func(i, out, args)
+func (f *Flood) addPeer(conn io.ReadWriteCloser) {
+    peer := rpc.NewClient(conn)
+    r := &ring.Ring{
+        Value: peer,
     }
 
-    count := 0
-    success := 0
-    fail := 0
-    min_time := 100 * time.Hour
-    max_time := time.Duration(0)
-    avg_time := time.Duration(0)
-    for count < total_requests {
-        rsp := <-out
-        count++;
-        if rsp.Code == 200 {
-            success++
+    f.peers_lck.Lock()
+    f.peers.PushFront(peer)
+    f.peers_lck.Unlock()
+}
+
+func (f *Flood) ConnectLocal() {
+    conn1, conn2 := net.Pipe()
+    go f.rpc_server.ServeConn(conn1)
+    go f.addPeer(conn2)
+}
+
+func (f *Flood) Connect(host string, port string, server bool) {
+    // client connection
+    conn, err := net.Dial("tcp", host + ":" + port)
+    if err != nil {
+        fmt.Printf("Failed dialing, host: %s, port: %s, err: %s",
+            host, port, err)
+    }
+    // add client connection
+    f.addPeer(conn)
+
+    if server {
+        // server connection
+        conn, err = net.Dial("tcp", host + ":" + port)
+        if err != nil {
+            fmt.Printf("Failed dialing, host: %s, port: %s, err: %s",
+                host, port, err)
+        }
+    }
+}
+
+func (f *Flood) Register(rcvr interface{}, local bool) {
+    err := f.rpc_server.Register(rcvr)
+    if err != nil {
+        fmt.Printf("Failed registering, rcvr: %s, err: %s", rcvr, err)
+    }
+}
+
+func (f *Flood) Serve(host string, port string) {
+    l, err := net.Listen("tcp", host + ":" + port)
+	if err != nil {
+        fmt.Printf("Failed listening, host: %s, port: %s, err: %s",
+            host, port, err)
+        return
+	}
+	defer l.Close()
+
+	for {
+		conn, err := l.Accept()
+        if err != nil {
+            fmt.Printf("Failed accepting, host: %s, port: %s, err: %s",
+                host, port, err)
+            continue
+        }
+
+        host, _, _ := net.SplitHostPort(conn.RemoteAddr())
+        _, ok := f.server_conns[host]
+        if !ok {
+            f.server_conns[host] = conn
+            go f.rpc_server.ServeConn(conn)
         } else {
-            fail++
+            f.client_conns[host] = conn
+            go f.addPeer(conn)
         }
-        if rsp.Time < min_time {
-            min_time = rsp.Time
-        }
-        if rsp.Time > max_time {
-            max_time = rsp.Time
-        }
-        avg_time = (avg_time * time.Duration(count - 1)  + rsp.Time) / time.Duration(count)
-    }
-    min_time /= time.Millisecond
-    max_time /= time.Millisecond
-    avg_time /= time.Millisecond
-    total_time := time.Now().Sub(ts) / time.Millisecond
+	}
 
-    reply.Success = success
-    reply.Fail = fail
-    reply.Min_time = min_time
-    reply.Max_time = max_time
-    reply.Avg_time = avg_time
-    reply.Total_time = total_time
-
-    return nil
 }

@@ -4,13 +4,19 @@ import "fmt"
 import "flag"
 import "io/ioutil"
 
-var clients *int = flag.Int("c", 1, "Number of clients to simulate")
-var requests *int = flag.Int("n", 1, "Number of requests per client")
-var http_method *string = flag.String("X", "GET", "http method")
-var http_url *string = flag.String("u", "http://example.com", "http url")
-var http_body *string = flag.String("d", "", "http body")
-var http_headers *string = flag.String("H", "", "http headers")
-var ssl_skip *bool = flag.Bool("k", false, "skip ssl cert verification")
+/* var clients *int = flag.Int("c", 1, "Number of clients to simulate") */
+/* var requests *int = flag.Int("n", 1, "Number of requests per client") */
+/* var http_method *string = flag.String("X", "GET", "http method") */
+/* var http_url *string = flag.String("u", "http://example.com", "http url") */
+/* var http_body *string = flag.String("d", "", "http body") */
+/* var http_headers *string = flag.String("H", "", "http headers") */
+/* var ssl_skip *bool = flag.Bool("k", false, "skip ssl cert verification") */
+
+var remote_host *string = flag.String("h", "localhost", "remote host")
+var remote_port *int = flag.Int("p", "3388", "remote port")
+var bind_host *string = flag.String("H", "0.0.0.0", "server bind host")
+var bind_port *int = flag.Int("P", "3388", "server bind port")
+var client *bool = flag.Bool("c", false, "start in client ctl (no server, no local executor)")
 
 func main() {
     flag.Parse()
