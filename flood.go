@@ -4,22 +4,84 @@ import "fmt"
 import "io"
 import "net"
 import "sync"
+import "reflect"
 import "net/rpc"
 import "container/list"
+
+type FloodRpcArgs struct {
+    Service string
+    Args map[string]string
+}
+
+type FloodRpcReply struct {
+    Reply map[string]string
+    Peers []FloodRpcReply
+}
+
+type FloodRpc struct {
+    flood *Flood
+}
+
+func NewFloodRpc(f *Flood) *FloodRpc {
+    r := &FloodRpc{
+        flood: f,
+    }
+    return r
+}
+
+func (r *FloodRpc) Run(args FloodRpcArgs, reply *FloodRpcReply) error {
+    var local_call *rpc.Call
+    calls := list.New()
+
+    if r.flood.local != nil {
+        fmt.Printf("Calling local, service: %s\n", args.Service)
+        local_call = r.flood.local.Go(args.Service, args, reply, nil)
+        calls.PushBack(local_call)
+    }
+
+    r.flood.peers_lck.Lock()
+    for e := r.flood.peers.Front(); e != nil; e = e.Next() {
+        r := &FloodRpcReply{}
+		call := e.Value.(*rpc.Client).Go("FloodRpc.Run", args, r, nil)
+        calls.PushFront(call)
+	}
+    r.flood.peers_lck.Unlock()
+
+    cases := make([]reflect.SelectCase, calls.Len())
+    i := 0
+    for e := calls.Front(); e != nil; e = e.Next() {
+        call := e.Value.(*rpc.Call)
+        cases[i] = reflect.SelectCase{
+            Dir: reflect.SelectRecv,
+            Chan: reflect.ValueOf(call.Done)}
+        i++
+    }
+
+    reply.Peers = make([]FloodRpcReply, calls.Len())
+    i = 0
+    for i < calls.Len() {
+        _, value, _ := reflect.Select(cases)
+        call := value.Interface().(*rpc.Call)
+
+        if call != local_call {
+            r := call.Reply.(*FloodRpcReply)
+            reply.Peers = append(reply.Peers, *r)
+        }
+        i++
+    }
+
+    return nil
+}
 
 type Flood struct {
     client_conns map[string]net.Conn
     server_conns map[string]net.Conn
 
+    local *rpc.Client
     peers *list.List
     peers_lck *sync.Mutex
 
     rpc_server *rpc.Server
-}
-
-type FloodReply struct {
-    reply map[string]string
-    peers []FloodReply
 }
 
 func NewFlood() *Flood {
@@ -43,8 +105,9 @@ func (f *Flood) addPeer(conn io.ReadWriteCloser) {
 
 func (f *Flood) ConnectLocal() {
     conn1, conn2 := net.Pipe()
-    go f.rpc_server.ServeConn(conn1)
-    go f.addPeer(conn2)
+    f.local = rpc.NewClient(conn1)
+    go f.rpc_server.ServeConn(conn2)
+    fmt.Printf("Connected to local rpc\n")
 }
 
 func (f *Flood) Connect(host string, port string, server bool) {
@@ -64,10 +127,11 @@ func (f *Flood) Connect(host string, port string, server bool) {
             fmt.Printf("Failed dialing, host: %s, port: %s, err: %s",
                 host, port, err)
         }
+        go f.rpc_server.ServeConn(conn)
     }
 }
 
-func (f *Flood) Register(rcvr interface{}, local bool) {
+func (f *Flood) Register(rcvr interface{}) {
     err := f.rpc_server.Register(rcvr)
     if err != nil {
         fmt.Printf("Failed registering, rcvr: %s, err: %s", rcvr, err)
