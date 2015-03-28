@@ -1,12 +1,15 @@
 package main
 
+import "fmt"
+import "io"
+import "net"
 import "sync"
 import "net/rpc"
 import "container/list"
 
 type Flood struct {
-    client_conns map[string]*io.ReadWriteCloser
-    server_conns map[string]*io.ReadWriteCloser
+    client_conns map[string]net.Conn
+    server_conns map[string]net.Conn
 
     peers *list.List
     peers_lck *sync.Mutex
@@ -14,22 +17,24 @@ type Flood struct {
     rpc_server *rpc.Server
 }
 
+type FloodReply struct {
+    reply map[string]string
+    peers []FloodReply
+}
+
 func NewFlood() *Flood {
     f := &Flood{
-        client_conns: make(map[string]*io.ReadWriteCloser),
-        server_conns: make(map[string]*io.ReadWriteCloser),
+        client_conns: make(map[string]net.Conn),
+        server_conns: make(map[string]net.Conn),
         peers: list.New(),
         peers_lck: &sync.Mutex{},
-        rcp_server: rpc.NewServer(),
+        rpc_server: rpc.NewServer(),
     }
     return f
 }
 
 func (f *Flood) addPeer(conn io.ReadWriteCloser) {
     peer := rpc.NewClient(conn)
-    r := &ring.Ring{
-        Value: peer,
-    }
 
     f.peers_lck.Lock()
     f.peers.PushFront(peer)
@@ -86,7 +91,7 @@ func (f *Flood) Serve(host string, port string) {
             continue
         }
 
-        host, _, _ := net.SplitHostPort(conn.RemoteAddr())
+        host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
         _, ok := f.server_conns[host]
         if !ok {
             f.server_conns[host] = conn
