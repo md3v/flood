@@ -25,12 +25,11 @@ func NewStress() *Stress {
 }
 
 func (f *Stress) Run(a FloodRpcArgs, reply *FloodRpcReply) error {
-    fmt.Printf("Stress\n")
     args := a.Args
-    concurrency, _ := strconv.Atoi(args["stress_concurrency"])
-    iterations, _ := strconv.Atoi(args["stress_iterations"])
+    concurrency, _ := strconv.Atoi(args["concurrency"])
+    iterations, _ := strconv.Atoi(args["iterations"])
 
-    v := f.stress_func[args["stress_type"]]
+    v := f.stress_func[args["type"]]
     stress := v.(func(int, chan *Msg, map[string]string))
 
     total_requests := concurrency * iterations
@@ -69,12 +68,12 @@ func (f *Stress) Run(a FloodRpcArgs, reply *FloodRpcReply) error {
     total_time := time.Now().Sub(ts) / time.Millisecond
 
     reply.Reply = make(map[string]string)
-    reply.Reply["stress_success"] = strconv.Itoa(success)
-    reply.Reply["stress_fail"] = strconv.Itoa(fail)
-    reply.Reply["stress_min_time"] = strconv.Itoa(int(min_time))
-    reply.Reply["stress_max_time"] = strconv.Itoa(int(max_time))
-    reply.Reply["stress_avg_time"] = strconv.Itoa(int(avg_time))
-    reply.Reply["stress_total_time"] = strconv.Itoa(int(total_time))
+    reply.Reply["success"] = strconv.Itoa(success)
+    reply.Reply["fail"] = strconv.Itoa(fail)
+    reply.Reply["min_time"] = strconv.Itoa(int(min_time))
+    reply.Reply["max_time"] = strconv.Itoa(int(max_time))
+    reply.Reply["avg_time"] = strconv.Itoa(int(avg_time))
+    reply.Reply["total_time"] = strconv.Itoa(int(total_time))
 
     return nil
 }
@@ -83,7 +82,7 @@ const USER_AGENT = "flood"
 
 func HttpTest(id int, out chan *Msg, args map[string]string) {
     ssl_skip := "true" == args["http_ssl_skip"]
-    iterations, _ := strconv.Atoi(args["stress_iterations"])
+    iterations, _ := strconv.Atoi(args["iterations"])
 
     tr := &http.Transport{
         TLSClientConfig: &tls.Config{

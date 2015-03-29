@@ -34,7 +34,6 @@ func (r *FloodRpc) Run(args FloodRpcArgs, reply *FloodRpcReply) error {
     calls := list.New()
 
     if r.flood.local != nil {
-        fmt.Printf("Calling local, service: %s\n", args.Service)
         local_call = r.flood.local.Go(args.Service, args, reply, nil)
         calls.PushBack(local_call)
     }

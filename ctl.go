@@ -10,52 +10,55 @@ import "io/ioutil"
 func ServeCtl(in io.Reader, out io.Writer, flood_rpc *FloodRpc) {
     reader := textproto.NewReader(bufio.NewReader(in))
     for {
+        fmt.Fprint(out, "> ")
         line, err := reader.ReadLine()
         if err == io.EOF {
             fmt.Printf("Failed reading, error: %s\n", err)
             break
         }
 
-        fmt.Printf("line: %s\n", line)
         service, args := parseLine(line)
 
         flood_args := FloodRpcArgs{
-            Service: service + ".Run",
+            Service: service,
             Args: args,
         }
 
         flood_reply := &FloodRpcReply{}
 
         flood_rpc.Run(flood_args, flood_reply)
+
+        fmt.Fprint(out, service)
         for key, value := range flood_reply.Reply {
-            fmt.Println("Key:", key, "Value:", value)
+            fmt.Fprintf(out, ", %s: %s", key, value)
         }
+        fmt.Fprintf(out, "\n")
     }
 }
 
-// Stress stress_type=http stress_concurrency=1 stress_iterations=1 http_method=GET http_url=http://example.com
+// Stress.Run concurrency=5 iterations=10 type=http http_method=GET http_url=http://example.com
 func parseLine(line string) (string, map[string]string) {
     chunks := strings.Split(line, " ")
     service := chunks[0]
     args := make(map[string]string)
     for _, chunk := range chunks[1:] {
         c := strings.SplitN(chunk, "=", 2)
-        args[c[0]] = c[1]
+        args[c[0]] = tryReadFile(c[1])
     }
 
     return service, args
 }
 
-func readBody(body_param string) string {
-    body := body_param
-    if len(body_param) > 0 && body_param[0] == '@' {
-        buf, err := ioutil.ReadFile(body_param[1:])
+func tryReadFile(param string) string {
+    out := param
+    if len(param) > 0 && param[0] == '@' {
+        buf, err := ioutil.ReadFile(param[1:])
         if err != nil {
             fmt.Printf("Failed reading file, error: %s\n", err)
-            return body_param
+        } else {
+            out = string(buf)
         }
-        body = string(buf)
     }
 
-    return body
+    return out
 }
