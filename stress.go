@@ -1,6 +1,6 @@
 package main
 
-import "fmt"
+import "log"
 import "time"
 import "strconv"
 import "strings"
@@ -24,10 +24,13 @@ func NewStress() *Stress {
     return f
 }
 
-func (f *Stress) Run(a FloodRpcArgs, reply *FloodRpcReply) error {
-    args := a.Args
+func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
+    args := req.Args
     concurrency, _ := strconv.Atoi(args["concurrency"])
     iterations, _ := strconv.Atoi(args["iterations"])
+
+    log.Printf("%s, concurrency: %d, iterations: %d",
+        req.Service, concurrency, iterations)
 
     v := f.stress_func[args["type"]]
     stress := v.(func(int, chan *Msg, map[string]string))
@@ -96,7 +99,7 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
         req, err := http.NewRequest(args["http_method"], args["http_url"],
             strings.NewReader(args["http_body"]))
         if err != nil {
-            fmt.Printf("%d/%d Failed creating request, error: %s\n",
+            log.Printf("%d/%d Failed creating request, error: %s\n",
                 id, i, err)
             out <- msg
             continue
@@ -113,7 +116,7 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
         msg.Time = time.Now().Sub(ts)
 
         if err != nil {
-            fmt.Printf("%d/%d Request failed, error: %s\n", id, i, err)
+            log.Printf("%d/%d Request failed, error: %s\n", id, i, err)
             out <- msg
             continue
         }

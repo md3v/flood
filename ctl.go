@@ -1,7 +1,9 @@
 package main
 
 import "fmt"
+import "log"
 import "io"
+import "sort"
 import "bufio"
 import "strings"
 import "net/textproto"
@@ -13,26 +15,38 @@ func ServeCtl(in io.Reader, out io.Writer, flood_rpc *FloodRpc) {
         fmt.Fprint(out, "> ")
         line, err := reader.ReadLine()
         if err == io.EOF {
-            fmt.Printf("Failed reading, error: %s\n", err)
+            log.Printf("Failed reading, error: %s\n", err)
             break
         }
 
         service, args := parseLine(line)
 
-        flood_args := FloodRpcArgs{
+        flood_req := FloodRpcReq{
             Service: service,
             Args: args,
         }
 
         flood_reply := &FloodRpcReply{}
+        flood_rpc.Run(flood_req, flood_reply)
+        printReply(out, flood_reply)
+    }
+}
 
-        flood_rpc.Run(flood_args, flood_reply)
-
-        fmt.Fprint(out, service)
-        for key, value := range flood_reply.Reply {
-            fmt.Fprintf(out, ", %s: %s", key, value)
+func printReply(out io.Writer, reply *FloodRpcReply) {
+    if reply.Service != "" {
+        fmt.Fprintf(out, "[%s] %s", reply.NodeName, reply.Service)
+        var keys []string
+        for key := range reply.Reply {
+            keys = append(keys, key)
+        }
+        sort.Strings(keys)
+        for _, key := range keys {
+            fmt.Fprintf(out, ", %s: %s", key, reply.Reply[key])
         }
         fmt.Fprintf(out, "\n")
+    }
+    for _, peer_reply := range reply.Peers {
+        printReply(out, &peer_reply)
     }
 }
 
@@ -54,7 +68,7 @@ func tryReadFile(param string) string {
     if len(param) > 0 && param[0] == '@' {
         buf, err := ioutil.ReadFile(param[1:])
         if err != nil {
-            fmt.Printf("Failed reading file, error: %s\n", err)
+            log.Printf("Failed reading file, error: %s\n", err)
         } else {
             out = string(buf)
         }

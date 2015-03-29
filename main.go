@@ -1,6 +1,7 @@
 package main
 
 import "os"
+import "log"
 import "flag"
 import "strconv"
 
@@ -17,12 +18,16 @@ var remote_port *int = flag.Int("p", 3388, "remote port")
 var bind_host *string = flag.String("H", "", "server bind host")
 var bind_port *int = flag.Int("P", 3388, "server bind port")
 var client *bool = flag.Bool("c", false, "start ctl mode")
-var server *bool = flag.Bool("s", false, "start server in ctl mode")
+var local *bool = flag.Bool("l", false, "connect local executor in ctl client mode")
 
 func main() {
     flag.Parse()
+
+    // setup logger
+    log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+
     connect_local := (*client && *remote_host == "") || !*client
-    run_server := !*client || *server
+    run_server := !*client
 
     stress := NewStress()
 
@@ -31,7 +36,7 @@ func main() {
     flood.Register(flood_rpc)
     flood.Register(stress)
 
-    if connect_local {
+    if connect_local || *local {
         flood.ConnectLocal()
     }
     if *remote_host != "" {
