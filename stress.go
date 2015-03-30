@@ -24,6 +24,7 @@ func NewStress() *Stress {
     return f
 }
 
+// Stress.Run concurrency=5 iterations=10 type=http http_method=GET http_url=http://example.com
 func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
     args := req.Args
     concurrency, _ := strconv.Atoi(args["concurrency"])

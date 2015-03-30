@@ -40,7 +40,7 @@ func NewFloodRpc(f *Flood) *FloodRpc {
 }
 
 func (r *FloodRpc) Run(req FloodRpcReq, reply *FloodRpcReply) error {
-    log.Printf("FloodRpc.Run/%s", req.Service)
+    log.Printf("FloodRpc.Run/%s, src: %s", req.Service, req.Source)
 
     var local_call *rpc.Call
     calls := list.New()
@@ -53,11 +53,15 @@ func (r *FloodRpc) Run(req FloodRpcReq, reply *FloodRpcReply) error {
         calls.PushBack(local_call)
     }
 
+    orig_src := req.Source
+
     r.flood.peers_lck.Lock()
     for e := r.flood.peers.Front(); e != nil; e = e.Next() {
         client := e.Value.(*floodPeer)
         // check to eliminate network loops
-        if client.addr_dst != req.Source {
+        if client.addr_dst != orig_src {
+            log.Printf("Forward FloodRpc.Run/%s, src: %s, dst: %s",
+                req.Service, orig_src, client.addr_dst)
             req.Source = client.addr_src
             rep := &FloodRpcReply{}
             call := client.rpc.Go("FloodRpc.Run", req, rep, nil)
@@ -150,12 +154,13 @@ func (f *Flood) ConnectLocal() {
     log.Printf("Connected to local rpc\n")
 }
 
-func (f *Flood) Connect(host string, port string, server bool) {
+func (f *Flood) Connect(host string, port string, server bool) error {
     // client connection (me/client -> rpc server)
     conn, err := net.Dial("tcp", host + ":" + port)
     if err != nil {
         log.Printf("Failed dialing, host: %s, port: %s, err: %s",
             host, port, err)
+        return err
     }
     // add client connection
     f.addPeer(conn)
@@ -166,9 +171,12 @@ func (f *Flood) Connect(host string, port string, server bool) {
         if err != nil {
             log.Printf("Failed dialing, host: %s, port: %s, err: %s",
                 host, port, err)
+            return err
         }
         go f.rpc_server.ServeConn(conn)
     }
+
+    return nil
 }
 
 func (f *Flood) Register(rcvr interface{}) {
