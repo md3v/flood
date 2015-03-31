@@ -9,7 +9,7 @@ import "strconv"
 import "strings"
 import "time"
 
-type Msg struct {
+type stressMsg struct {
     Code int
     Time time.Duration
 }
@@ -36,10 +36,10 @@ func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
         req.Service, concurrency, iterations)
 
     v := f.stress_func[args["type"]]
-    stress := v.(func(int, chan *Msg, map[string]string))
+    stress := v.(func(int, chan *stressMsg, map[string]string))
 
     total_requests := concurrency * iterations
-    out := make(chan *Msg, total_requests)
+    out := make(chan *stressMsg, total_requests)
 
     ts := time.Now()
     for i := 0; i < concurrency; i++ {
@@ -49,6 +49,8 @@ func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
     count := 0
     success := 0
     fail := 0
+    errors := 0
+    time_count := 0
     min_time := 100 * time.Hour
     max_time := time.Duration(0)
     avg_time := time.Duration(0)
@@ -57,16 +59,21 @@ func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
         count++;
         if rsp.Code == 200 {
             success++
+        } else if rsp.Code == -1 {
+            errors++
+            // errors doesn't impact timing
+            continue
         } else {
             fail++
         }
+        time_count++
         if rsp.Time < min_time {
             min_time = rsp.Time
         }
         if rsp.Time > max_time {
             max_time = rsp.Time
         }
-        avg_time = (avg_time * time.Duration(count - 1)  + rsp.Time) / time.Duration(count)
+        avg_time = (avg_time * time.Duration(time_count - 1)  + rsp.Time) / time.Duration(time_count)
     }
     min_time /= time.Millisecond
     max_time /= time.Millisecond
@@ -76,6 +83,7 @@ func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
     reply.Reply = make(map[string]string)
     reply.Reply["success"] = strconv.Itoa(success)
     reply.Reply["fail"] = strconv.Itoa(fail)
+    reply.Reply["errors"] = strconv.Itoa(errors)
     reply.Reply["min_time"] = strconv.Itoa(int(min_time))
     reply.Reply["max_time"] = strconv.Itoa(int(max_time))
     reply.Reply["avg_time"] = strconv.Itoa(int(avg_time))
@@ -86,7 +94,7 @@ func (f *Stress) Run(req FloodRpcReq, reply *FloodRpcReply) error {
 
 const USER_AGENT = "flood"
 
-func HttpTest(id int, out chan *Msg, args map[string]string) {
+func HttpTest(id int, out chan *stressMsg, args map[string]string) {
     ssl_skip := "true" == args["http_ssl_skip"]
     disable_keep_alive := "true" == args["http_disable_keepalive"]
     iterations, _ := strconv.Atoi(args["iterations"])
@@ -102,7 +110,7 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
     client := &http.Client{Transport: tr}
 
     for i := 0; i < iterations; i++ {
-        msg := &Msg{Code: 0}
+        msg := &stressMsg{Code: -1, Time: 0}
         req, err := http.NewRequest(args["http_method"], args["http_url"],
             strings.NewReader(args["http_body"]))
         if err != nil {
@@ -112,7 +120,7 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
             continue
         }
         req.Header.Set("User-Agent", USER_AGENT)
-        // TODO 
+        // TODO parse multiple headers
         if len(args["http_headers"]) > 0 {
             chunks := strings.SplitN(args["http_headers"], ":", 2)
             req.Header.Add(chunks[0], chunks[1])
@@ -121,18 +129,15 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
         ts := time.Now()
 
         res, err := client.Do(req)
-        io.Copy(ioutil.Discard, res.Body)
-        res.Body.Close()
-
-        msg.Time = time.Now().Sub(ts)
-
         if err != nil {
+            msg.Time = time.Now().Sub(ts)
             log.Printf("%d/%d Request failed, error: %s\n", id, i, err)
-            out <- msg
-            continue
+        } else {
+            io.Copy(ioutil.Discard, res.Body)
+            res.Body.Close()
+            msg.Time = time.Now().Sub(ts)
+            msg.Code = res.StatusCode
         }
-
-        msg.Code = res.StatusCode
 
         out <- msg
     }
