@@ -1,13 +1,13 @@
 package main
 
-import "log"
-import "os"
-import "net"
-import "sync"
-import "strconv"
-import "reflect"
-import "net/rpc"
 import "container/list"
+import "log"
+import "net"
+import "net/rpc"
+import "os"
+import "reflect"
+import "strconv"
+import "sync"
 
 type FloodRpcReq struct {
     Source string
@@ -60,14 +60,14 @@ func (r *FloodRpc) Run(req FloodRpcReq, reply *FloodRpcReply) error {
         client := e.Value.(*floodPeer)
         // check to eliminate network loops
         if client.addr_dst != orig_src {
-            log.Printf("Forward FloodRpc.Run/%s, src: %s, dst: %s",
-                req.Service, orig_src, client.addr_dst)
+            /* log.Printf("Forward FloodRpc.Run/%s, src: %s, dst: %s", */
+            /*     req.Service, orig_src, client.addr_dst) */
             req.Source = client.addr_src
             rep := &FloodRpcReply{}
             call := client.rpc.Go("FloodRpc.Run", req, rep, nil)
             calls.PushFront(call)
         }
-	}
+    }
     r.flood.peers_lck.Unlock()
 
     cases := make([]reflect.SelectCase, calls.Len())
@@ -158,10 +158,11 @@ func (f *Flood) Connect(host string, port string, server bool) error {
     // client connection (me/client -> rpc server)
     conn, err := net.Dial("tcp", host + ":" + port)
     if err != nil {
-        log.Printf("Failed dialing, host: %s, port: %s, err: %s",
+        log.Printf("Failed dialing %s:%s, err: %s",
             host, port, err)
         return err
     }
+    log.Printf("Connected client to %s:%s", host, port)
     // add client connection
     f.addPeer(conn)
 
@@ -169,10 +170,11 @@ func (f *Flood) Connect(host string, port string, server bool) error {
         // server connection (peer -> rpc server/me)
         conn, err = net.Dial("tcp", host + ":" + port)
         if err != nil {
-            log.Printf("Failed dialing, host: %s, port: %s, err: %s",
+            log.Printf("Failed dialing %s:%s, err: %s",
                 host, port, err)
             return err
         }
+        log.Printf("Connected client from %s:%s", host, port)
         go f.rpc_server.ServeConn(conn)
     }
 
@@ -188,15 +190,15 @@ func (f *Flood) Register(rcvr interface{}) {
 
 func (f *Flood) Serve(host string, port string) {
     l, err := net.Listen("tcp", host + ":" + port)
-	if err != nil {
+    if err != nil {
         log.Printf("Failed listening, host: %s, port: %s, err: %s",
             host, port, err)
         return
-	}
-	defer l.Close()
+    }
+    defer l.Close()
 
-	for {
-		conn, err := l.Accept()
+    for {
+        conn, err := l.Accept()
         if err != nil {
             log.Printf("Failed accepting, host: %s, port: %s, err: %s",
                 host, port, err)
@@ -212,6 +214,6 @@ func (f *Flood) Serve(host string, port string) {
             f.client_conns[host] = conn
             go f.addPeer(conn)
         }
-	}
+    }
 
 }

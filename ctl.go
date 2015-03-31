@@ -1,13 +1,13 @@
 package main
 
-import "fmt"
-import "log"
-import "io"
-import "sort"
 import "bufio"
-import "strings"
-import "net/textproto"
+import "fmt"
+import "io"
 import "io/ioutil"
+import "log"
+import "net/textproto"
+import "sort"
+import "strings"
 
 func ServeCtl(in io.Reader, out io.Writer, flood_rpc *FloodRpc) {
     reader := textproto.NewReader(bufio.NewReader(in))

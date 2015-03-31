@@ -1,11 +1,13 @@
 package main
 
+import "crypto/tls"
+import "io"
+import "io/ioutil"
 import "log"
-import "time"
+import "net/http"
 import "strconv"
 import "strings"
-import "net/http"
-import "crypto/tls"
+import "time"
 
 type Msg struct {
     Code int
@@ -86,12 +88,16 @@ const USER_AGENT = "flood"
 
 func HttpTest(id int, out chan *Msg, args map[string]string) {
     ssl_skip := "true" == args["http_ssl_skip"]
+    disable_keep_alive := "true" == args["http_disable_keepalive"]
     iterations, _ := strconv.Atoi(args["iterations"])
 
     tr := &http.Transport{
         TLSClientConfig: &tls.Config{
             InsecureSkipVerify: ssl_skip,
         },
+        // DisableKeepAlives, if true, prevents re-use of TCP connections
+        // between different HTTP requests.
+        DisableKeepAlives: disable_keep_alive,
     }
     client := &http.Client{Transport: tr}
 
@@ -113,7 +119,11 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
         }
 
         ts := time.Now()
-        resp, err := client.Do(req)
+
+        res, err := client.Do(req)
+        io.Copy(ioutil.Discard, res.Body)
+        res.Body.Close()
+
         msg.Time = time.Now().Sub(ts)
 
         if err != nil {
@@ -122,7 +132,7 @@ func HttpTest(id int, out chan *Msg, args map[string]string) {
             continue
         }
 
-        msg.Code = resp.StatusCode
+        msg.Code = res.StatusCode
 
         out <- msg
     }
